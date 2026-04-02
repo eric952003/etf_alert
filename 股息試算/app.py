@@ -20,29 +20,57 @@ except:
     df = pd.DataFrame(columns=["代號", "股數", "股價", "本次配息", "過去一年配息", "54C(%)"])
 
 # --- 3. 新增 ETF 功能 (以自動抓取為例) ---
-with st.expander("➕ 新增 ETF 到雲端清單"):
-    aid = st.text_input("ETF 代號")
-    ashares = st.number_input("持有股數", min_value=0, step=1000)
-    if st.button("🚀 抓取並存入雲端"):
-        with st.spinner("同步至 Google 雲端中..."):
-            ticker_sym = f"{aid}.TW" if not aid.endswith(('.TW', '.TWO')) else aid
-            t = yf.Ticker(ticker_sym)
-            h = t.history(period="1d")
-            d = t.dividends
-            if not h.empty:
-                new_data = pd.DataFrame([{
-                    "代號": aid, "股數": int(ashares), "股價": float(h['Close'].iloc[-1]),
-                    "本次配息": float(d.iloc[-1]), 
-                    "過去一年配息": float(d[d.index >= (datetime.now()-timedelta(days=365)).strftime('%Y-%m-%d')].sum()),
-                    "54C(%)": 100.0
-                }])
-                # 合併舊資料與新資料
-                updated_df = pd.concat([df, new_data], ignore_index=True)
-                # 寫回 Google Sheets
-                conn.update(data=updated_df)
-                st.success("✅ 雲端同步成功！")
-                st.rerun()
-
+# --- 修正後的自動抓取區塊 ---
+with st.expander("➕ 新增 ETF 到雲端清單", expanded=True):
+    aid = st.text_input("ETF 代號 (例: 00878)", key="input_aid")
+    ashares = st.number_input("持有股數", min_value=0, step=1000, key="input_shares")
+    
+    if st.button("🚀 執行自動抓取並同步雲端", use_container_width=True):
+        if aid and ashares > 0:
+            with st.spinner("正在連線 Yahoo 股市並同步至 Google Sheets..."):
+                try:
+                    # 1. 抓取資料
+                    ticker_sym = f"{aid}.TW" if not aid.endswith(('.TW', '.TWO')) else aid
+                    t = yf.Ticker(ticker_sym)
+                    h = t.history(period="1d")
+                    d = t.dividends
+                    
+                    if h.empty or d.empty:
+                        t = yf.Ticker(f"{aid}.TWO")
+                        h = t.history(period="1d")
+                        d = t.dividends
+                    
+                    if not h.empty:
+                        price = float(h['Close'].iloc[-1])
+                        div = float(d.iloc[-1])
+                        annual_div = float(d[d.index >= (datetime.now()-timedelta(days=365)).strftime('%Y-%m-%d')].sum())
+                        
+                        # 2. 準備新資料
+                        new_row = pd.DataFrame([{
+                            "代號": aid, 
+                            "股數": int(ashares), 
+                            "股價": price,
+                            "本次配息": div, 
+                            "過去一年配息": annual_div,
+                            "54C(%)": 100.0
+                        }])
+                        
+                        # 3. 讀取最新雲端資料並合併 (確保不會覆蓋掉現有的)
+                        current_df = conn.read(ttl=0) # ttl=0 強制抓最新，不使用快取
+                        updated_df = pd.concat([current_df, new_row], ignore_index=True)
+                        
+                        # 4. 寫回雲端
+                        conn.update(data=updated_df)
+                        
+                        st.success(f"✅ {aid} 已成功同步至雲端！")
+                        # 5. 強制重整頁面，讓下方表格抓到新資料
+                        st.rerun()
+                    else:
+                        st.error("❌ 找不到該代號的配息資料，請檢查代號是否正確。")
+                except Exception as e:
+                    st.error(f"❌ 抓取或同步失敗: {e}")
+        else:
+            st.warning("⚠️ 請輸入代號與股數！")
 # --- 4. 顯示與即時計算 ---
 if not df.empty:
     st.subheader("📝 雲端庫存清單")
