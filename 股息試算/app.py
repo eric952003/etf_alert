@@ -118,7 +118,7 @@ if not df.empty:
             "年領股息": f"${int(annual):,}"
         })
     
-    st.table(pd.DataFrame(calc_results)) # 這裡如果報錯請檢查變數名稱，應為 calc_data
+    st.table(pd.DataFrame(calc_data)) # 這裡如果報錯請檢查變數名稱，應為 calc_data
     
     st.divider()
     col_a, col_b = st.columns(2)
