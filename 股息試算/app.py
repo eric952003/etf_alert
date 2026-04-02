@@ -134,11 +134,18 @@ if not df.empty:
     st.subheader("📊 健檢與收益分析")
     st.dataframe(pd.DataFrame(calc_results), hide_index=True, use_container_width=True)
 
-    # 指標顯示
-    c_a, c_b, c_c = st.columns(3)
-    c_a.metric("💰 預估年領股息", f"${int(total_annual):,}")
-    c_b.metric("🎁 預估抵減稅額", f"${int(total_tax_deduct):,}")
+    # --- 最下方的「大字報」總結指標 ---
+    st.divider()
+    col_a, col_b = st.columns(2)
+    
+    # 格式化數字增加可讀性
+    annual_income_str = f"${int(total_annual_income):,}"
+    tax_deduct_str = f"${int(total_tax_deduct):,}"
+    
+    col_a.metric(label="💰 預估年領總股息", value=annual_income_str)
+    col_b.metric(label="🎁 預估可抵減稅額", value=tax_deduct_str)
+    
     if alert_count > 0:
-        c_c.error(f"⚠️ {alert_count} 檔超標")
+        st.error(f"⚠️ 注意：清單中有 {alert_count} 檔已達二代健保扣費門檻！")
     else:
-        c_c.success("✅ 全數安全")
+        st.success("✅ 恭喜！目前所有標的皆無需扣除二代健保補充保費。")
