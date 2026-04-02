@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import yfinance as yf
 from datetime import datetime, timedelta
+import requests  # 新增這行！用來建立網路連線設定
 
 # --- 1. 網頁基本設定 ---
 st.set_page_config(page_title="ETF 存股儀表板", page_icon="📈", layout="centered")
@@ -27,11 +28,24 @@ with st.expander("➕ 新增 ETF 到庫存清單", expanded=True):
         if new_id and new_shares > 0:
             with st.spinner('連線至 Yahoo 股市抓取資料中...'):
                 try:
+                   try:
+                    # 建立一個偽裝成真人瀏覽器的連線 Session
+                    session = requests.Session()
+                    session.headers['User-agent'] = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+
                     # 處理台股代號後綴
                     ticker_sym = f"{new_id}.TW" if not new_id.endswith(('.TW', '.TWO')) else new_id
-                    ticker = yf.Ticker(ticker_sym)
+                    
+                    # 抓取資料時，把我們剛剛做好的 session 帶進去
+                    ticker = yf.Ticker(ticker_sym, session=session)
                     hist = ticker.history(period="1d")
                     divs = ticker.dividends
+                    
+                    # 如果上市找不到，找上櫃
+                    if hist.empty or divs.empty:
+                        ticker = yf.Ticker(f"{new_id}.TWO", session=session)
+                        hist = ticker.history(period="1d")
+                        divs = ticker.dividends
                     
                     # 如果上市找不到，找上櫃
                     if hist.empty or divs.empty:
