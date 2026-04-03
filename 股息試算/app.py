@@ -10,7 +10,7 @@ st.title("📱 ETF 雲端萬能儀表板")
 st.markdown("自動判定**股票(8.5%抵稅)**與**債券(海外所得)**之稅務差異")
 
 # --- 2. 建立 Google Sheets 連線 ---
-# 請確保在 Streamlit Cloud 的 Secrets 中設定好 URL
+# 記得在 Streamlit Cloud 的 Secrets 中設定好 URL
 conn = st.connection("gsheets", type=GSheetsConnection)
 
 def get_data():
@@ -26,6 +26,9 @@ df = get_data()
 with st.expander("➕ 新增 ETF 到雲端清單", expanded=df.empty):
     tab1, tab2 = st.tabs(["🔍 自動抓取 (推薦)", "✍️ 手動輸入"])
 
+    # -----------------------------------------
+    # 分頁 1：自動抓取 (具備升級版防呆機制)
+    # -----------------------------------------
     with tab1:
         c1, c2, c3 = st.columns(3)
         aid = c1.text_input("ETF 代號", key="aid")
@@ -40,10 +43,14 @@ with st.expander("➕ 新增 ETF 到雲端清單", expanded=df.empty):
                         t = yf.Ticker(ticker_sym)
                         h = t.history(period="1d")
                         d = t.dividends
-                        if h.empty or d.empty:
-                            t = yf.Ticker(f"{aid}.TWO"); h = t.history(period="1d"); d = t.dividends
                         
-                        if not h.empty:
+                        if h.empty or d.empty:
+                            t = yf.Ticker(f"{aid}.TWO")
+                            h = t.history(period="1d")
+                            d = t.dividends
+                        
+                        # 情況 A：股價和配息都有抓到 -> 正常寫入
+                        if not h.empty and not d.empty:
                             new_row = pd.DataFrame([{
                                 "代號": aid.upper(), "股數": int(ashares), "股價": float(h['Close'].iloc[-1]),
                                 "本次配息": float(d.iloc[-1]), 
@@ -54,8 +61,22 @@ with st.expander("➕ 新增 ETF 到雲端清單", expanded=df.empty):
                             conn.update(data=updated_df)
                             st.success(f"✅ {aid} 已同步至雲端！")
                             st.rerun()
-                    except: st.error("抓取失敗，請檢查代號或網路")
+                            
+                        # 情況 B：有股價，但 Yahoo 沒給配息資料 -> 提示手動輸入
+                        elif not h.empty and d.empty:
+                            st.warning(f"⚠️ 有抓到 {aid} 的股價，但 Yahoo 暫時無法提供配息資料！請切換至「✍️ 手動輸入」。")
+                            
+                        # 情況 C：什麼都沒抓到
+                        else:
+                            st.error(f"❌ 找不到 {aid} 的資料，請確認代號是否正確。")
+                            
+                    except Exception as e: 
+                        # 把真實的錯誤訊息印出來
+                        st.error(f"❌ 抓取過程發生異常，系統錯誤訊息：{e}")
 
+    # -----------------------------------------
+    # 分頁 2：全手動輸入
+    # -----------------------------------------
     with tab2:
         m1, m2, m3 = st.columns(3)
         mid = m1.text_input("代號", key="mid")
@@ -136,7 +157,6 @@ if not df.empty:
 
     c_a, c_b = st.columns(2)
     c_a.metric("💰 預估年度總股息", f"${int(total_annual_income):,}")
-    # 這裡會正確顯示 0056 的抵稅額，並排除掉 B 結尾的債券 ETF
     c_b.metric("🎁 預估可抵減稅額", f"${int(total_tax_deduct):,}")
 
     st.caption("註：抵減稅額僅針對國內股票型 ETF 計算，債券 ETF (代號 B 結尾) 視為海外所得不計入。")
