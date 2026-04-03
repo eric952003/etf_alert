@@ -10,16 +10,37 @@ st.set_page_config(page_title="ETF 萬能儀表板", page_icon="📈", layout="c
 # --- 2. 側邊欄：檔案讀取與存檔功能 ---
 st.sidebar.header("📁 資料管理中心")
 
-# 初始化暫存資料
+# 初始化暫存資料與上傳紀錄
 if 'portfolio' not in st.session_state:
     st.session_state.portfolio = []
+if 'last_uploaded' not in st.session_state:
+    st.session_state.last_uploaded = None
 
-# 功能 A：匯入 CSV 檔案
+# 功能 A：匯入 CSV 檔案 (加入自動防呆與編碼偵測)
 uploaded_file = st.sidebar.file_uploader("匯入現有的存股清單 (.csv)", type="csv")
 if uploaded_file is not None:
-    uploaded_df = pd.read_csv(uploaded_file)
-    st.session_state.portfolio = uploaded_df.to_dict('records')
-    st.sidebar.success("✅ 資料讀取成功！")
+    # 檢查是否為「新」上傳的檔案，避免每次點擊按鈕都重新覆蓋資料
+    if st.session_state.last_uploaded != uploaded_file.name:
+        try:
+            # 優先嘗試用 UTF-8 (帶 BOM，對 Excel 最友善) 讀取
+            uploaded_df = pd.read_csv(uploaded_file, encoding='utf-8-sig')
+            st.session_state.portfolio = uploaded_df.to_dict('records')
+            st.session_state.last_uploaded = uploaded_file.name
+            st.sidebar.success("✅ 資料讀取成功！")
+            st.rerun()
+        except UnicodeDecodeError:
+            try:
+                # 如果失敗，嘗試用台灣 Windows 傳統的 Big5 編碼讀取
+                uploaded_file.seek(0) # 把讀取點移回檔案開頭
+                uploaded_df = pd.read_csv(uploaded_file, encoding='big5')
+                st.session_state.portfolio = uploaded_df.to_dict('records')
+                st.session_state.last_uploaded = uploaded_file.name
+                st.sidebar.success("✅ 資料讀取成功！(使用 Big5 編碼)")
+                st.rerun()
+            except Exception as e:
+                st.sidebar.error(f"❌ 檔案解碼失敗，請確認是否為正常的 CSV 檔。錯誤: {e}")
+        except Exception as e:
+            st.sidebar.error(f"❌ 讀取發生錯誤: {e}")
 
 st.sidebar.divider()
 
@@ -84,12 +105,12 @@ if st.session_state.portfolio:
         st.session_state.portfolio = edited_df.to_dict('records')
         st.rerun()
 
-    # --- 功能 B：匯出 CSV 檔案 (放在表格下方) ---
+    # --- 功能 B：匯出 CSV 檔案 (設定為 utf-8-sig 防亂碼) ---
     csv_buffer = io.StringIO()
-    edited_df.to_csv(csv_buffer, index=False)
+    edited_df.to_csv(csv_buffer, index=False, encoding='utf-8-sig')
     st.download_button(
         label="💾 下載目前清單備份 (.csv)",
-        data=csv_buffer.getvalue(),
+        data=csv_buffer.getvalue().encode('utf-8-sig'), # 確保下載的位元組是正確的格式
         file_name=f"my_etf_portfolio_{datetime.now().strftime('%Y%m%d')}.csv",
         mime="text/csv",
         use_container_width=True
@@ -97,6 +118,7 @@ if st.session_state.portfolio:
 
     if st.button("🗑️ 清空全庫存"):
         st.session_state.portfolio = []
+        st.session_state.last_uploaded = None # 清空時連同上傳記憶一起清掉
         st.rerun()
 
     # --- 稅務計算與指標 ---
